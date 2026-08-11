@@ -1,0 +1,60 @@
+name: Build and Release Patched TickTick
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Direct URL to your original TickTick.exe file"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Patched TickTick
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download TickTick Setup
+        shell: pwsh
+        run: |
+          Write-Host "Downloading target file from ${{ inputs.app_url }}..."
+          Invoke-WebRequest -Uri "${{ inputs.app_url }}" -OutFile "TickTick.exe"
+
+      - name: Run Patcher
+        # We can just build and run directly via dotnet run
+        run: dotnet run -- "TickTick.exe"
+
+      - name: Prepare Release Package
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "TickTick_Patched.exe")) {
+            Write-Error "Patching failed: TickTick_Patched.exe not generated."
+            exit 1
+          }
+          Compress-Archive -Path "TickTick_Patched.exe" -DestinationPath "TickTick_Patched.zip"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Patched TickTick (${{ github.run_number }})
+          files: TickTick_Patched.zip
+          draft: true
+
+      - name: Output Release URL
+        shell: pwsh
+        run: |
+          Write-Host "::notice::Release available at: https://github.com/${{ github.repository }}/releases"
